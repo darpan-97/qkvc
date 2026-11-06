@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Base64 Transformer</title>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap");
+/* paper and ink; query teal, key terracotta, value olive, the MLP slate */
+:root {
+  --bg: #f7f5f0; --panel: #efebe3; --ink: #1c1a17; --ink-2: #5c564c; --ink-3: #8f887b;
+  --rule: #dcd5c9; --rule-2: #e9e4da;
+  --q: #0f766e;  --q-soft: #d6ebe7;  --q-line: #86c3b9;
+  --k: #b4532a;  --k-soft: #f3e0d4;  --k-line: #dba98c;
+  --v: #5b6b12;  --v-soft: #e6eacb;  --v-line: #b3bf6d;
+  --code: #946200; --code-soft: #f2e4c2; --code-line: #d6b562;
+  --ff: #3d5560; --ff-soft: #e2e8e8;
+  --hl-soft: #ebe5d8; --ok: #2f7a4a; --bad: #b42318;
+  --f-text: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-data: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  --shadow: 0 10px 28px rgba(28, 26, 23, .14), 0 2px 6px rgba(28, 26, 23, .06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16140f; --panel: #1f1c16; --ink: #ece7dd; --ink-2: #b6ae9f; --ink-3: #7e7769; --rule: #36312a; --rule-2: #27231d;
+    --q: #45bcae; --q-soft: #12302c; --q-line: #24726a; --k: #e28d63; --k-soft: #3b2217; --k-line: #8c4c2e;
+    --v: #b6c95c; --v-soft: #283012; --v-line: #6c7b27; --code: #e4b24c; --code-soft: #3a2c0f; --code-line: #8c6b20;
+    --ff: #a4bac3; --ff-soft: #20292d; --hl-soft: #2b2720; --ok: #5cbf86; --bad: #f07c6c;
+    --shadow: 0 10px 28px rgba(0, 0, 0, .5);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16140f; --panel: #1f1c16; --ink: #ece7dd; --ink-2: #b6ae9f; --ink-3: #7e7769; --rule: #36312a; --rule-2: #27231d;
+  --q: #45bcae; --q-soft: #12302c; --q-line: #24726a; --k: #e28d63; --k-soft: #3b2217; --k-line: #8c4c2e;
+  --v: #b6c95c; --v-soft: #283012; --v-line: #6c7b27; --code: #e4b24c; --code-soft: #3a2c0f; --code-line: #8c6b20;
+  --ff: #a4bac3; --ff-soft: #20292d; --hl-soft: #2b2720; --ok: #5cbf86; --bad: #f07c6c;
+  --shadow: 0 10px 28px rgba(0, 0, 0, .5);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--f-text); }
+button, input, select { font: inherit; color: inherit; }
+.mono { font-family: var(--f-data); }
+
+/* ---- top bar ---- */
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 12px 16px;
+         border-bottom: 1px solid var(--rule); }
+.logo { font: 600 18px var(--f-data); margin-right: 8px; display: flex; align-items: center; gap: 8px; }
+.logo i { width: 14px; height: 14px; background: var(--code); border-radius: 3px; box-shadow: 5px 4px 0 var(--q); }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 7px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 6px 12px; cursor: pointer; }
+.seg button.on { background: var(--hl-soft); font-weight: 600; box-shadow: inset 0 -2px 0 var(--code); }
+.btn { border: 1px solid var(--rule); background: var(--bg); border-radius: 7px; padding: 6px 12px; cursor: pointer; }
+.btn:hover { background: var(--hl-soft); }
+.btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 600; }
+.btn:disabled { opacity: .45; cursor: default; }
+#input { flex: 1 1 220px; min-width: 160px; border: 1px solid var(--rule); background: var(--bg); border-radius: 7px;
+         padding: 6px 10px; font-family: var(--f-data); }
+#input.bad { border-color: var(--bad); }
+.speed { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 12px; }
+.spacer { flex: 1; }
+
+#status { padding: 8px 16px; border-bottom: 1px solid var(--rule-2); color: var(--ink-2); display: flex; flex-wrap: wrap;
+          gap: 4px 18px; font-size: 13px; }
+#status b { color: var(--ink); }
+#status .ok { color: var(--ok); } #status .bad { color: var(--bad); font-weight: 600; }
+
+/* ---- the diagram ---- */
+#wrap { overflow-x: auto; padding: 8px 16px 0; }
+#diagram { position: relative; display: grid; grid-template-columns: 158px 136px 282px 320px 172px 70px;
+           gap: 0 18px; min-width: 1228px; min-height: 430px; }
+#ribbons { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.col { position: relative; transition: opacity .2s; }
+.col h3 { margin: 0 0 8px; font: 500 12px var(--f-text); color: var(--ink-3); text-transform: uppercase;
+          letter-spacing: .04em; display: flex; align-items: center; gap: 6px; }
+.plus { width: 17px; height: 17px; border-radius: 50%; border: 1px solid var(--ink-3); background: transparent;
+        color: var(--ink-3); font-size: 12px; line-height: 14px; padding: 0; cursor: pointer; }
+.plus:hover { border-color: var(--ink); color: var(--ink); }
+.sub { font-size: 11px; color: var(--ink-3); margin: -6px 0 8px; }
+.dim .col:not(.lit) { opacity: .28; }
+.dim #ribbons { opacity: .35; }
+.col.lit { opacity: 1; }
+
+/* sequence */
+.chip { font: 12px var(--f-data); border: 1px solid var(--rule); border-radius: 5px; padding: 2px 6px; margin: 0 0 3px;
+        display: flex; justify-content: space-between; gap: 6px; background: var(--bg); }
+.chip small { color: var(--ink-3); }
+.chip.g1 { background: var(--panel); }
+.chip.query { border: 1.5px dashed var(--ink); }
+.chip.pick1 { border-color: var(--q); box-shadow: inset 3px 0 0 var(--q); }
+.chip.pick2 { border-color: var(--k); box-shadow: inset 3px 0 0 var(--k); }
+.chip.new { border-color: var(--code); background: var(--code-soft); }
+.gap { font: 11px var(--f-data); color: var(--ink-3); padding: 0 6px 3px; }
+.bar { height: 6px; border-radius: 3px; background: var(--rule-2); position: relative; margin: 8px 0 2px; }
+.bar i { position: absolute; top: -2px; width: 3px; height: 10px; border-radius: 1px; }
+
+/* embedding */
+.feat { font: 12px var(--f-data); padding: 2px 6px; border-left: 2px solid var(--code-line); margin-bottom: 3px; }
+.note { font-size: 12px; color: var(--ink-2); }
+
+/* attention */
+.head { display: grid; grid-template-columns: 92px 22px 1fr; gap: 6px; align-items: center; margin-bottom: 7px;
+        cursor: pointer; border-radius: 6px; padding: 2px; }
+.head:hover { background: var(--hl-soft); }
+.head.off { opacity: .45; }
+.q { font: 11.5px var(--f-data); background: var(--q-soft); border: 1px solid var(--q-line); color: var(--q);
+     border-radius: 5px; padding: 3px 6px; }
+.dot { width: 14px; height: 14px; border-radius: 50%; background: var(--ink); justify-self: center; }
+.val { font: 11.5px var(--f-data); background: var(--v-soft); border: 1px solid var(--v-line); border-radius: 5px;
+       padding: 3px 6px; display: flex; justify-content: space-between; gap: 6px; }
+.val b { font-weight: 600; }
+.val small { color: var(--ink-3); }
+.hname { font: 11px var(--f-data); color: var(--ink-3); grid-column: 1 / -1; margin-bottom: -4px; }
+
+/* MLP wiring */
+#wires { width: 320px; height: 330px; display: block; }
+#wires text { font: 11px var(--f-data); fill: var(--ink-2); }
+#wires .lbl { fill: var(--ink-3); font: 10.5px var(--f-text); }
+.flags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.flag { font: 11px var(--f-data); border: 1px solid var(--rule); border-radius: 5px; padding: 1px 6px; color: var(--ink-3); }
+.flag.on { border-color: var(--ink); color: var(--ink); background: var(--hl-soft); font-weight: 600; }
+
+/* output */
+.score { display: grid; grid-template-columns: 44px 1fr 36px; gap: 6px; align-items: center; font: 12px var(--f-data);
+         margin-bottom: 4px; }
+.score .b { height: 10px; border-radius: 3px; background: var(--rule); }
+.score.win .b { background: var(--ink); }
+.score.win { font-weight: 600; }
+.next { font: 600 26px var(--f-data); border: 1.5px solid var(--code); background: var(--code-soft); border-radius: 8px;
+        text-align: center; padding: 10px 0; }
+.check { font-size: 12px; text-align: center; margin-top: 6px; }
+.check.ok { color: var(--ok); } .check.bad { color: var(--bad); font-weight: 600; }
+
+/* ---- panels under the diagram ---- */
+#panels { display: grid; grid-template-columns: 1.2fr 1.2fr 1fr; gap: 12px; padding: 12px 16px 24px; }
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+.panel h4 { margin: 0 0 6px; font: 600 13px var(--f-text); }
+.panel h4 small { font-weight: 400; color: var(--ink-3); }
+.syms { font: 12.5px var(--f-data); display: flex; flex-wrap: wrap; gap: 3px 0; max-height: 120px; overflow-y: auto; }
+.syms span { padding: 1px 3px; }
+.syms .g1 { background: var(--rule-2); }
+.syms .cur { outline: 1.5px solid var(--q); border-radius: 3px; }
+.syms .cur2 { outline: 1.5px solid var(--k); border-radius: 3px; }
+.rule { font: 12.5px var(--f-data); white-space: pre-wrap; }
+
+/* ---- cards and the tour ---- */
+#card { position: fixed; z-index: 20; left: 50%; top: 90px; transform: translateX(-50%); width: min(680px, calc(100% - 32px));
+        max-height: calc(100vh - 120px); overflow: auto; background: var(--bg); border: 1px solid var(--rule);
+        border-radius: 10px; box-shadow: var(--shadow); padding: 14px 16px; display: none; }
+#card h4 { margin: 0 0 8px; font-size: 15px; padding-right: 26px; }
+#card table { border-collapse: collapse; width: 100%; font: 12px var(--f-data); margin: 8px 0; }
+#card td, #card th { border-bottom: 1px solid var(--rule-2); padding: 3px 6px; text-align: left; vertical-align: top; }
+#card th { font: 500 11.5px var(--f-text); color: var(--ink-3); }
+#card .x, #tour .x { position: absolute; right: 10px; top: 8px; border: 0; background: none; font-size: 18px; cursor: pointer;
+                     color: var(--ink-3); }
+.pm { display: inline-block; width: 16px; text-align: center; border-radius: 3px; }
+.pm.p { background: var(--q-soft); color: var(--q); } .pm.m { background: var(--k-soft); color: var(--k); }
+#tour { position: fixed; z-index: 21; width: 360px; background: var(--bg); border: 1px solid var(--rule); border-radius: 10px;
+        box-shadow: var(--shadow); padding: 12px 14px 10px; display: none; font-size: 13.5px; }
+#tour .nav { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+#tour .nav span { flex: 1; text-align: right; font-size: 12px; color: var(--ink-3); }
+#notes { padding: 0 16px 40px; max-width: 860px; color: var(--ink-2); }
+#notes h2 { font-size: 16px; color: var(--ink); margin: 18px 0 6px; }
+#notes p { margin: 0 0 10px; }
+#notes a { color: var(--q); }
+#loading { padding: 40px 16px; color: var(--ink-3); }
+@media (max-width: 760px) { #panels { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><i></i>base64 transformer</div>
+  <div class="seg" id="mode"><button data-m="encode" class="on">encode</button><button data-m="decode">decode</button></div>
+  <input id="input" spellcheck="false" value="Type something here!" aria-label="input">
+  <button class="btn primary" id="next">Next token</button>
+  <button class="btn" id="play">Play</button>
+  <button class="btn" id="end">To the end</button>
+  <span class="speed">speed <input type="range" id="speed" min="1" max="40" value="4"> <span id="speedv">4/s</span></span>
+  <span class="spacer"></span>
+  <button class="btn" id="tourbtn">Tour</button>
+  <button class="btn" id="theme">dark</button>
+</header>
+<div id="status"><span>loading the weights</span></div>
+<div id="loading">building the transformer from weights.json …</div>
+<div id="wrap" hidden>
+  <div id="diagram">
+    <svg id="ribbons"></svg>
+    <div class="col" id="c-seq"><h3>Sequence <button class="plus" data-card="seq">+</button></h3>
+      <div class="sub">the last 8 tokens, what attention sees; the newest one is dashed</div><div id="seq"></div><div class="bar" id="bar"></div></div>
+    <div class="col" id="c-emb"><h3>Embedding <button class="plus" data-card="emb">+</button></h3>
+      <div class="sub">the newest token as numbers</div><div id="emb"></div></div>
+    <div class="col" id="c-att"><h3>Attention · 5 heads <button class="plus" data-card="att">+</button></h3>
+      <div class="sub">query: how far back · weight · value: what it brings</div><div id="att"></div></div>
+    <div class="col" id="c-mlp"><h3>MLP · 54 units <button class="plus" data-card="mlp">+</button></h3>
+      <div class="sub" id="mlpsub">the fetched bits, rewired into the output's bits</div>
+      <svg id="wires" viewBox="0 0 320 330"></svg><div class="flags" id="flags"></div></div>
+    <div class="col" id="c-out"><h3>Output layer <button class="plus" data-card="out">+</button></h3>
+      <div class="sub">a score for each of 325 tokens</div><div id="out"></div></div>
+    <div class="col" id="c-next"><h3>Next</h3><div class="sub">appended</div><div id="next-tok"></div></div>
+  </div>
+</div>
+<div id="panels" hidden>
+  <div class="panel"><h4>The stream <small id="in-sub"></small></h4><div class="syms" id="in-syms"></div></div>
+  <div class="panel"><h4>Output so far <small id="out-sub"></small></h4><div class="syms" id="out-syms"></div>
+    <div class="note" id="ref"></div></div>
+  <div class="panel"><h4>The rule at this place <small>read off the MLP's weights</small></h4><div class="rule" id="rule"></div></div>
+</div>
+<div id="notes" hidden>
+  <h2>What this is</h2>
+  <p>A transformer that encodes and decodes base64, made by <a href="https://github.com/darpan-97/qkvc">qkvc's builder</a>: every weight
+  placed by rule, no training. The page runs it here, live, on the real weights (the same numbers as the Python model, checked equal),
+  and checks every token it writes against your browser's own base64 (<span class="mono">btoa</span> / <span class="mono">atob</span>).</p>
+  <h2>How one token is made</h2>
+  <p>Base64 turns every 3 bytes into 4 characters of 6 bits. The stream is written group by group, <span class="mono">ENC H e l S G V s</span>,
+  so what an output needs is always the same distance back, however long the input is. Each output needs at most two input symbols. Two
+  attention heads each fetch one of them (the query names a phase, only the token at that phase matches, the weight on it is 1). The MLP's
+  units are AND gates that copy each fetched bit to its place in the output. The output layer gives every token a score by how many bits
+  agree, and the highest score is the next token.</p>
+  <h2>How it is checked</h2>
+  <p><span class="mono">python -m qkvc verify base64</span> reads these weights and proves the model follows the task's rules for every valid
+  input of any length. The rules are checked against real base64: every full group of bytes, every one- and two-byte ending, and a sample
+  of whole inputs.</p>
+</div>
+<div id="card"><button class="x" aria-label="close">×</button><div id="card-body"></div></div>
+<div id="tour"><button class="x" aria-label="close">×</button><div id="tour-body"></div>
+  <div class="nav"><button class="btn" id="tprev">‹</button><button class="btn" id="tnext">›</button><span id="tstep"></span></div></div>
+<script src="engine.js"></script>
+<script src="page.js"></script>
+</body>
+</html>
